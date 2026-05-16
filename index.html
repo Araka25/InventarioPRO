@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inventario Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Overlay de login — visível até autenticação ser confirmada -->
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-card">
+        <div class="login-brand">
+          <span class="login-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </span>
+          <h1>Inventário PCP</h1>
+        </div>
+        <p class="login-subtitle">Entre com sua conta para acessar o painel.</p>
+        <form id="loginForm" autocomplete="on" novalidate>
+          <label class="login-label">
+            Email
+            <input
+              type="email"
+              name="email"
+              id="loginEmail"
+              required
+              autocomplete="username"
+              placeholder="seu@email.com"
+            />
+          </label>
+          <label class="login-label">
+            Senha
+            <input
+              type="password"
+              name="password"
+              id="loginPassword"
+              required
+              autocomplete="current-password"
+              placeholder="••••••••"
+            />
+          </label>
+          <div id="loginError" class="login-error" role="alert"></div>
+          <button class="btn primary login-submit" type="submit" id="loginSubmit">
+            Entrar
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div id="app"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Configuração do projeto Supabase (edite supabase-client.js) -->
+    <script src="supabase-client.js"></script>
+    <script src="inventory-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
