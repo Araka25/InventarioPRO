@@ -2786,6 +2786,35 @@ fieldset legend {
 .analise-card.below .card-cost  { color: var(--red); }
 .analise-card.all .card-cost    { color: var(--accent); }
 
+/* ============================================================
+   NET DIVERG. — cores conforme direção líquida
+   ============================================================ */
+.analise-card.net-sobra { border-left-color: var(--cyan); }
+.analise-card.net-sobra .card-cost { color: var(--cyan); }
+
+.analise-card.net-falta { border-left-color: var(--red); }
+.analise-card.net-falta .card-cost { color: var(--red); }
+
+.analise-card.net-zero { border-left-color: var(--green); }
+.analise-card.net-zero .card-cost { color: var(--green); }
+
+.net-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.net-arrow {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  font-family: var(--font-sans);
+}
+
+/* Texto NET nos cards de planta */
+.plant-stat strong.net-falta-text { color: var(--red) !important; }
+.plant-stat strong.net-sobra-text { color: var(--cyan) !important; }
+
 .analise-card small {
   color: var(--muted);
   font-size: 0.74rem;

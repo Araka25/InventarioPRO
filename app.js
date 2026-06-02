@@ -728,16 +728,19 @@ function analiseSummary(records) {
     below: { items: [], cost: 0 },
     tolerance: { items: [], cost: 0 },
     ok: { items: [], cost: 0 },
-    allDivergent: { items: [], cost: 0 },
+    // allDivergent.cost = soma absoluta (bruto), costNet = soma com sinais (líquido)
+    allDivergent: { items: [], cost: 0, costNet: 0 },
   };
   records.forEach((r) => {
     const cls = classify(r);
-    const absCost = Math.abs(number(r.custoDivergencia));
+    const signedCost = number(r.custoDivergencia);
+    const absCost = Math.abs(signedCost);
     summary[cls].items.push(r);
     summary[cls].cost += absCost;
     if (number(r.comparativo) !== 0) {
       summary.allDivergent.items.push(r);
       summary.allDivergent.cost += absCost;
+      summary.allDivergent.costNet += signedCost;  // sobra > 0, falta < 0
     }
   });
   return summary;
@@ -777,7 +780,7 @@ function accumulatePlant(map, key, r) {
     total: 0,
     above: 0, below: 0, tolerance: 0, ok: 0,
     sobraAll: 0, faltaAll: 0,
-    costAbove: 0, costBelow: 0, costTotal: 0,
+    costAbove: 0, costBelow: 0, costTotal: 0, costNet: 0,
   };
   cur.total += 1;
   const cls = classify(r);
@@ -785,10 +788,14 @@ function accumulatePlant(map, key, r) {
   const comp = number(r.comparativo);
   if (comp > 0) cur.sobraAll += 1;
   if (comp < 0) cur.faltaAll += 1;
-  const absCost = Math.abs(number(r.custoDivergencia));
+  const signedCost = number(r.custoDivergencia);
+  const absCost = Math.abs(signedCost);
   if (cls === "above") cur.costAbove += absCost;
   if (cls === "below") cur.costBelow += absCost;
-  if (comp !== 0) cur.costTotal += absCost;
+  if (comp !== 0) {
+    cur.costTotal += absCost;
+    cur.costNet += signedCost;
+  }
   map.set(key, cur);
 }
 
@@ -827,9 +834,11 @@ function renderPlantAnalysis(byPlanta) {
                 <span>${pctFora.toFixed(1)}% fora</span>
               </div>
               <div class="plant-stat total">
-                <label>CUSTO TOTAL DIVERG.</label>
-                <strong>${displayMoney(p.costTotal)}</strong>
-                <span>${displayInt(p.sobraAll)} sobra · ${displayInt(p.faltaAll)} falta</span>
+                <label>NET DIVERG. (sobra − falta)</label>
+                <strong class="${number(p.costNet) < 0 ? "net-falta-text" : number(p.costNet) > 0 ? "net-sobra-text" : ""}">
+                  ${number(p.costNet) < 0 ? "↓ " : number(p.costNet) > 0 ? "↑ " : ""}${displayMoney(Math.abs(number(p.costNet)))}
+                </strong>
+                <span>bruto ${displayMoney(p.costTotal)} · ${displayInt(p.sobraAll)} sobra · ${displayInt(p.faltaAll)} falta</span>
               </div>
             </div>
           </article>
@@ -928,7 +937,7 @@ function renderAnalise() {
       ${renderAnaliseCard(`SOBRA > +${TOLERANCE_LABEL}`, sum.above, "above", "Itens com sobra acima da tolerância (PCP precisa investigar excesso).")}
       ${renderAnaliseCard(`FALTA < −${TOLERANCE_LABEL}`, sum.below, "below", "Itens com falta acima da tolerância (perda potencial ou erro de apontamento).")}
       ${renderAnaliseCard(`DENTRO ±${TOLERANCE_LABEL}`, sum.tolerance, "tolerance", "Itens com divergência tolerada — apenas monitoramento.")}
-      ${renderAnaliseCard("TOTAL DIVERG.", sum.allDivergent, "all", "Soma absoluta de todos os itens fora do esperado.")}
+      ${renderNetDivergCard(sum.allDivergent)}
     </section>
 
     <section class="panel pad">
@@ -1016,6 +1025,30 @@ function renderAnaliseCard(label, group, kind, description) {
       <strong>${displayInt(group.items.length)}</strong>
       <div class="card-cost">${displayMoney(group.cost)}</div>
       <small>${description}</small>
+    </article>
+  `;
+}
+
+// Card especial: TOTAL DIVERG. exibe NET (sobra - falta) com sinais
+function renderNetDivergCard(group) {
+  const net = number(group.costNet);
+  const isSobra = net > 0;
+  const isFalta = net < 0;
+  const directionClass = isFalta ? "net-falta" : isSobra ? "net-sobra" : "net-zero";
+  const directionLabel = isFalta
+    ? "Falta líquida (perdeu valor)"
+    : isSobra
+      ? "Sobra líquida (excesso real)"
+      : "Equilibrado (sobra ≈ falta)";
+  const arrow = isFalta ? "↓" : isSobra ? "↑" : "=";
+  return `
+    <article class="analise-card all ${directionClass}">
+      <label>NET DIVERG. (sobra − falta)</label>
+      <strong>${displayInt(group.items.length)}</strong>
+      <div class="card-cost net-value">
+        <span class="net-arrow">${arrow}</span>${displayMoney(Math.abs(net))}
+      </div>
+      <small>${directionLabel} · bruto ${displayMoney(group.cost)}</small>
     </article>
   `;
 }
