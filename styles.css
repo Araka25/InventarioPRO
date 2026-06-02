@@ -2815,10 +2815,267 @@ fieldset legend {
 .plant-stat strong.net-falta-text { color: var(--red) !important; }
 .plant-stat strong.net-sobra-text { color: var(--cyan) !important; }
 
+/* ============================================================
+   Card NET DIVERG. com quebra sobra/falta
+   ============================================================ */
+.net-card strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.net-card-subtotal {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: -2px;
+}
+
+.net-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 8px;
+  padding: 8px 10px;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.net-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+}
+
+.net-line span {
+  color: var(--soft);
+  font-weight: 600;
+}
+
+.net-line b {
+  font-family: var(--mono);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.net-line.sobra b { color: var(--cyan); }
+.net-line.falta b { color: var(--red); }
+
+.net-final {
+  font-size: 1.4rem !important;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.net-final .net-arrow {
+  font-size: 1.4rem;
+}
+
+/* ============================================================
+   Painel de transparência dos cálculos
+   ============================================================ */
+.calc-explain {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.calc-explain summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--soft);
+  user-select: none;
+  list-style: none;
+  transition: background 160ms ease;
+}
+
+.calc-explain summary::-webkit-details-marker { display: none; }
+
+.calc-explain summary:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.calc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-style: italic;
+  font-weight: 800;
+  font-family: Georgia, serif;
+}
+
+.calc-chevron {
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform 200ms ease;
+}
+
+.calc-explain[open] .calc-chevron {
+  transform: rotate(180deg);
+}
+
+.calc-body {
+  padding: 4px 18px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.calc-formula {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 14px 0;
+}
+
+.calc-formula h4,
+.calc-net h4 {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.calc-formula p {
+  margin: 5px 0;
+  font-size: 0.86rem;
+  color: var(--soft);
+  font-family: var(--mono);
+}
+
+.calc-formula p b {
+  color: var(--text);
+}
+
+.calc-note {
+  font-family: var(--font-sans) !important;
+  font-size: 0.78rem !important;
+  color: var(--muted) !important;
+  margin-top: 8px !important;
+  line-height: 1.5;
+}
+
+.t-sobra { color: var(--cyan); font-weight: 700; }
+.t-falta { color: var(--red); font-weight: 700; }
+
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.calc-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.calc-item.above     { border-left-color: var(--cyan); }
+.calc-item.below     { border-left-color: var(--red); }
+.calc-item.tolerance { border-left-color: var(--yellow); }
+.calc-item.ok        { border-left-color: var(--green); }
+
+.calc-item h5 {
+  margin: 0 0 8px;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.calc-item p {
+  margin: 4px 0;
+  font-size: 0.8rem;
+  color: var(--soft);
+}
+
+.calc-item p b {
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.calc-net {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.08), transparent 70%);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 14px;
+}
+
+.calc-net-math {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+}
+
+.calc-net-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+}
+
+.calc-net-row span {
+  color: var(--soft);
+  font-weight: 600;
+}
+
+.calc-net-row b {
+  font-family: var(--mono);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.calc-net-row.sobra b { color: var(--cyan); }
+.calc-net-row.falta b { color: var(--red); }
+
+.calc-net-row.result {
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  font-size: 1rem;
+}
+
+.calc-net-row.result span {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.calc-net-row.result b {
+  font-size: 1.1rem;
+}
+
 .analise-card small {
   color: var(--muted);
   font-size: 0.74rem;
-  margin-top: 4px;
+  margin-top: auto;
+  padding-top: 6px;
   line-height: 1.4;
 }
 

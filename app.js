@@ -724,24 +724,37 @@ function uniquePlants() {
 
 function analiseSummary(records) {
   const summary = {
-    above: { items: [], cost: 0 },
-    below: { items: [], cost: 0 },
-    tolerance: { items: [], cost: 0 },
-    ok: { items: [], cost: 0 },
-    // allDivergent.cost = soma absoluta (bruto), costNet = soma com sinais (líquido)
+    // Por faixa de tolerância: cost = soma absoluta, net = soma com sinais
+    above: { items: [], cost: 0, net: 0 },       // sobra > +5.5%
+    below: { items: [], cost: 0, net: 0 },       // falta < -5.5%
+    tolerance: { items: [], cost: 0, net: 0 },   // dentro ±5.5% (com divergência)
+    ok: { items: [], cost: 0, net: 0 },          // sem divergência
+    // Todos os divergentes: cost = bruto (absoluto), costNet = líquido (com sinais)
     allDivergent: { items: [], cost: 0, costNet: 0 },
+    // Quebra por SINAL (todos os itens com divergência, qualquer %)
+    sobra: { count: 0, cost: 0 },  // comparativo > 0 → custo positivo (excesso)
+    falta: { count: 0, cost: 0 },  // comparativo < 0 → custo negativo (perda)
+    totalAnalyzed: records.length,
   };
   records.forEach((r) => {
     const cls = classify(r);
     const signedCost = number(r.custoDivergencia);
     const absCost = Math.abs(signedCost);
+    const comp = number(r.comparativo);
+
     summary[cls].items.push(r);
     summary[cls].cost += absCost;
-    if (number(r.comparativo) !== 0) {
+    summary[cls].net += signedCost;
+
+    if (comp !== 0) {
       summary.allDivergent.items.push(r);
       summary.allDivergent.cost += absCost;
-      summary.allDivergent.costNet += signedCost;  // sobra > 0, falta < 0
+      summary.allDivergent.costNet += signedCost;
     }
+
+    // Quebra por sinal — independente da faixa de tolerância
+    if (comp > 0) { summary.sobra.count += 1; summary.sobra.cost += signedCost; }
+    if (comp < 0) { summary.falta.count += 1; summary.falta.cost += signedCost; }
   });
   return summary;
 }
@@ -936,9 +949,11 @@ function renderAnalise() {
     <section class="analise-summary">
       ${renderAnaliseCard(`SOBRA > +${TOLERANCE_LABEL}`, sum.above, "above", "Itens com sobra acima da tolerância (PCP precisa investigar excesso).")}
       ${renderAnaliseCard(`FALTA < −${TOLERANCE_LABEL}`, sum.below, "below", "Itens com falta acima da tolerância (perda potencial ou erro de apontamento).")}
-      ${renderAnaliseCard(`DENTRO ±${TOLERANCE_LABEL}`, sum.tolerance, "tolerance", "Itens com divergência tolerada — apenas monitoramento.")}
-      ${renderNetDivergCard(sum.allDivergent)}
+      ${renderAnaliseCard(`DENTRO ±${TOLERANCE_LABEL}`, sum.tolerance, "tolerance", `Valor líquido das divergências toleradas · bruto ${displayMoney(sum.tolerance.cost)}`, { net: true })}
+      ${renderNetDivergCard(sum)}
     </section>
+
+    ${renderCalcExplain(sum)}
 
     <section class="panel pad">
       <div class="panel-title">
@@ -1018,38 +1033,132 @@ function renderAnalise() {
   `;
 }
 
-function renderAnaliseCard(label, group, kind, description) {
+function renderAnaliseCard(label, group, kind, description, opts = {}) {
+  // opts.net = true → mostra valor líquido (com sinais) em vez de absoluto
+  let costHtml;
+  if (opts.net) {
+    const net = number(group.net);
+    const arrow = net < 0 ? "↓ " : net > 0 ? "↑ " : "";
+    costHtml = `${arrow}${displayMoney(Math.abs(net))}`;
+  } else {
+    costHtml = displayMoney(group.cost);
+  }
   return `
     <article class="analise-card ${kind}">
       <label>${label}</label>
       <strong>${displayInt(group.items.length)}</strong>
-      <div class="card-cost">${displayMoney(group.cost)}</div>
+      <div class="card-cost">${costHtml}</div>
       <small>${description}</small>
     </article>
   `;
 }
 
-// Card especial: TOTAL DIVERG. exibe NET (sobra - falta) com sinais
-function renderNetDivergCard(group) {
-  const net = number(group.costNet);
-  const isSobra = net > 0;
+// Card especial: NET DIVERG. com total analisado + quebra sobra/falta + total líquido
+function renderNetDivergCard(sum) {
+  const sobraCost = number(sum.sobra.cost);   // positivo (excesso)
+  const faltaCost = number(sum.falta.cost);   // negativo (perda)
+  const net = sobraCost + faltaCost;
   const isFalta = net < 0;
+  const isSobra = net > 0;
   const directionClass = isFalta ? "net-falta" : isSobra ? "net-sobra" : "net-zero";
+  const arrow = isFalta ? "↓" : isSobra ? "↑" : "=";
   const directionLabel = isFalta
-    ? "Falta líquida (perdeu valor)"
+    ? "Falta líquida (perda real)"
     : isSobra
       ? "Sobra líquida (excesso real)"
-      : "Equilibrado (sobra ≈ falta)";
-  const arrow = isFalta ? "↓" : isSobra ? "↑" : "=";
+      : "Equilibrado";
   return `
-    <article class="analise-card all ${directionClass}">
+    <article class="analise-card all ${directionClass} net-card">
       <label>NET DIVERG. (sobra − falta)</label>
-      <strong>${displayInt(group.items.length)}</strong>
-      <div class="card-cost net-value">
+      <strong>${displayInt(sum.totalAnalyzed)}</strong>
+      <span class="net-card-subtotal">itens analisados</span>
+      <div class="net-breakdown">
+        <div class="net-line sobra">
+          <span>${displayInt(sum.sobra.count)} sobra (+)</span>
+          <b>+${displayMoney(sobraCost)}</b>
+        </div>
+        <div class="net-line falta">
+          <span>${displayInt(sum.falta.count)} falta (−)</span>
+          <b>${displayMoney(faltaCost)}</b>
+        </div>
+      </div>
+      <div class="card-cost net-value net-final">
         <span class="net-arrow">${arrow}</span>${displayMoney(Math.abs(net))}
       </div>
-      <small>${directionLabel} · bruto ${displayMoney(group.cost)}</small>
+      <small>${directionLabel}</small>
     </article>
+  `;
+}
+
+// Painel de transparência: explica como cada métrica é calculada com os números reais
+function renderCalcExplain(sum) {
+  const sobraCost = number(sum.sobra.cost);
+  const faltaCost = number(sum.falta.cost);
+  const net = sobraCost + faltaCost;
+  const okCount = sum.ok.items.length;
+  return `
+    <details class="calc-explain">
+      <summary>
+        <span class="calc-icon">𝑓</span>
+        Como estes valores são calculados
+        <span class="calc-chevron">▾</span>
+      </summary>
+      <div class="calc-body">
+        <div class="calc-formula">
+          <h4>Base do cálculo (por item)</h4>
+          <p><b>Comparativo</b> = Inventariado (INV.TOTAL) − Saldo esperado (SALDO NIGURI)</p>
+          <p><b>%</b> = Comparativo ÷ Saldo esperado</p>
+          <p><b>Custo divergência</b> = Comparativo × Preço unitário</p>
+          <p class="calc-note">Comparativo positivo = <span class="t-sobra">sobra</span> (contou mais que o esperado). Negativo = <span class="t-falta">falta</span> (contou menos).</p>
+        </div>
+
+        <div class="calc-grid">
+          <div class="calc-item above">
+            <h5>SOBRA &gt; +${TOLERANCE_LABEL}</h5>
+            <p>Itens onde <b>% &gt; +${TOLERANCE_LABEL}</b>.</p>
+            <p>${displayInt(sum.above.items.length)} itens · custo bruto ${displayMoney(sum.above.cost)}</p>
+          </div>
+          <div class="calc-item below">
+            <h5>FALTA &lt; −${TOLERANCE_LABEL}</h5>
+            <p>Itens onde <b>% &lt; −${TOLERANCE_LABEL}</b>.</p>
+            <p>${displayInt(sum.below.items.length)} itens · custo bruto ${displayMoney(sum.below.cost)}</p>
+          </div>
+          <div class="calc-item tolerance">
+            <h5>DENTRO ±${TOLERANCE_LABEL}</h5>
+            <p>Itens com divergência mas <b>dentro de ±${TOLERANCE_LABEL}</b> (toleradas).</p>
+            <p>${displayInt(sum.tolerance.items.length)} itens · líquido ${displayMoney(sum.tolerance.net)} · bruto ${displayMoney(sum.tolerance.cost)}</p>
+            <p class="calc-note">Mostramos o <b>líquido</b> (sobra − falta) porque divergências pequenas tendem a se anular. O bruto somaria os módulos e inflaria o valor.</p>
+          </div>
+          <div class="calc-item ok">
+            <h5>SEM DIVERGÊNCIA</h5>
+            <p>Itens onde <b>Inventariado = Saldo</b> (comparativo zero).</p>
+            <p>${displayInt(okCount)} itens · R$ 0,00</p>
+          </div>
+        </div>
+
+        <div class="calc-net">
+          <h4>NET DIVERG. — o número que importa para o caixa</h4>
+          <div class="calc-net-math">
+            <div class="calc-net-row sobra">
+              <span>${displayInt(sum.sobra.count)} itens com sobra</span>
+              <b>+${displayMoney(sobraCost)}</b>
+            </div>
+            <div class="calc-net-row falta">
+              <span>${displayInt(sum.falta.count)} itens com falta</span>
+              <b>${displayMoney(faltaCost)}</b>
+            </div>
+            <div class="calc-net-row result">
+              <span>= NET (impacto real)</span>
+              <b class="${net < 0 ? "t-falta" : "t-sobra"}">${net < 0 ? "↓ " : net > 0 ? "↑ " : ""}${displayMoney(Math.abs(net))}</b>
+            </div>
+          </div>
+          <p class="calc-note">
+            A quebra acima soma <b>todos</b> os itens divergentes pelo sinal (independente da faixa de tolerância).
+            Exemplo: R$ 100 mil de falta e R$ 90 mil de sobra resultam em R$ 10 mil de falta líquida — esse é o impacto real, não R$ 190 mil.
+          </p>
+        </div>
+      </div>
+    </details>
   `;
 }
 
