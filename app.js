@@ -642,7 +642,7 @@ function renderDashboard() {
     ${renderPcpFilters(rows)}
     ${renderKpis(rows)}
     <section class="chart-stack">
-      ${renderPartNumberBars("Itens com maior custo para atenção", topPartNumbers(rows), "Barras por P.Number, priorizando impacto financeiro para PCP.")}
+      ${renderPartNumberBars("Divergência por part number — maior impacto financeiro", topPartNumbers(rows), "Cor da barra indica sobra (ciano) ou falta (vermelho); % no topo mostra a representação proporcional ao saldo esperado.")}
       <div class="chart-grid">
         ${renderRankingChart("Custo por cliente", groupTop(rows, "cliente", "custoDivergencia", topLimit()), "Clientes que concentram custo de divergência.", "cliente")}
         ${renderAttentionDonut(rows)}
@@ -1116,6 +1116,7 @@ const FIELD_LABELS = {
   fornecedor: "Fornecedor",
   material: "Material",
   unidade: "Planta",
+  partNumber: "Part Number",
 };
 
 function openDrawer(field, value) {
@@ -1460,29 +1461,88 @@ function renderPartNumberBars(title, records, subtitle) {
     <section class="panel pad chart-panel">
       <div class="panel-title">
         <div>
-          <h3>${title}</h3>
-          <p>${subtitle}</p>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(subtitle)}</p>
         </div>
         <button class="btn secondary small" data-view="partnumber" type="button">Detalhar</button>
       </div>
       ${records.length ? `
-        <div class="vertical-chart" data-count="${records.length}">
+        <div class="vertical-chart pro-chart" data-count="${records.length}">
           ${records.map((record) => {
             const cost = Math.abs(number(record.custoDivergencia));
-            const qty = Math.abs(number(record.comparativo));
+            const comp = number(record.comparativo);
+            const pct = number(record.percentual);
+            const qty = Math.abs(comp);
+            const direction = comp >= 0 ? "sobra" : "falta";
+            const pctSign = pct >= 0 ? "+" : "";
+            const pctText = `${pctSign}${(pct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
             return `
-              <article class="bar-column">
+              <article class="bar-column drill-target" data-direction="${direction}" data-drill="partNumber:${escapeHtml(record.partNumber)}" title="Clique para ver detalhes">
                 <div class="bar-value">${displayMoney(cost)}</div>
                 <div class="bar-pillar" style="--h:${Math.max(5, cost / max * 100)}%">
                   <span></span>
+                  <em class="bar-pct">${pctText}</em>
                 </div>
                 <strong title="${escapeHtml(record.partNumber)}">${escapeHtml(record.partNumber)}</strong>
-                <small>${displayInt(qty)} pçs · ${escapeHtml(record.cliente || "-")}</small>
+                <small>
+                  <span class="bar-direction ${direction}">${direction === "sobra" ? "▲ SOBRA" : "▼ FALTA"}</span>
+                  ${displayInt(qty)} pçs · ${escapeHtml(record.cliente || "-")}
+                </small>
               </article>
             `;
           }).join("")}
         </div>
-        <div class="chart-foot">Itens: ${displayInt(records.length)} | Top ${topLimit()} | Fonte: custo divergente absoluto</div>
+        <div class="chart-foot">Itens: ${displayInt(records.length)} | Top ${topLimit()} | Fonte: custo divergente absoluto · cor indica sobra (ciano) ou falta (vermelho)</div>
+      ` : `<div class="empty-state">Nenhuma divergência encontrada para os filtros atuais.</div>`}
+    </section>
+  `;
+}
+
+function topPartNumbersByPct(records, limit = topLimit()) {
+  return [...records]
+    .filter((record) => Math.abs(number(record.percentual)) > 0 && number(record.saldoNiguri) !== 0)
+    .sort((a, b) => Math.abs(number(b.percentual)) - Math.abs(number(a.percentual)))
+    .slice(0, limit);
+}
+
+function renderPartNumberPctBars(title, records, subtitle) {
+  const max = Math.max(0.001, ...records.map((record) => Math.abs(number(record.percentual))));
+  return `
+    <section class="panel pad chart-panel">
+      <div class="panel-title">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(subtitle)}</p>
+        </div>
+      </div>
+      ${records.length ? `
+        <div class="vertical-chart pro-chart pct-chart" data-count="${records.length}">
+          ${records.map((record) => {
+            const pct = number(record.percentual);
+            const absPct = Math.abs(pct);
+            const cost = Math.abs(number(record.custoDivergencia));
+            const comp = number(record.comparativo);
+            const qty = Math.abs(comp);
+            const direction = comp >= 0 ? "sobra" : "falta";
+            const pctSign = pct >= 0 ? "+" : "";
+            const pctText = `${pctSign}${(pct * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+            return `
+              <article class="bar-column drill-target" data-direction="${direction}" data-drill="partNumber:${escapeHtml(record.partNumber)}" title="Clique para ver detalhes">
+                <div class="bar-value">${pctText}</div>
+                <div class="bar-pillar" style="--h:${Math.max(5, absPct / max * 100)}%">
+                  <span></span>
+                  <em class="bar-pct money">${displayMoney(cost)}</em>
+                </div>
+                <strong title="${escapeHtml(record.partNumber)}">${escapeHtml(record.partNumber)}</strong>
+                <small>
+                  <span class="bar-direction ${direction}">${direction === "sobra" ? "▲ SOBRA" : "▼ FALTA"}</span>
+                  ${displayInt(qty)} pçs · ${escapeHtml(record.cliente || "-")}
+                </small>
+              </article>
+            `;
+          }).join("")}
+        </div>
+        <div class="chart-foot">Itens: ${displayInt(records.length)} | Top ${topLimit()} | Fonte: percentual absoluto de divergência (|Inv − Saldo| / Saldo)</div>
       ` : `<div class="empty-state">Nenhuma divergência encontrada para os filtros atuais.</div>`}
     </section>
   `;
@@ -1711,12 +1771,22 @@ function renderCostView() {
 
 function renderPartNumberView() {
   const rows = activeRows();
-  const top = topPartNumbers(rows, topLimit());
+  const topByCost = topPartNumbers(rows, topLimit());
+  const topByPct = topPartNumbersByPct(rows, topLimit());
   return `
     ${renderPcpFilters(rows)}
     ${renderKpis(rows)}
     <section class="chart-stack">
-      ${renderPartNumberBars("Refugo por part number", top, "Ranking dos itens com maior custo divergente e quantidade para análise.")}
+      ${renderPartNumberBars(
+        "Divergência por part number — impacto financeiro",
+        topByCost,
+        "Ranking por R$ divergente. Cor da barra indica sobra (ciano) ou falta (vermelho); % no topo da barra mostra a representação proporcional ao saldo.",
+      )}
+      ${renderPartNumberPctBars(
+        "Divergência por part number — impacto percentual",
+        topByPct,
+        "Ranking pelo % mais distante do saldo esperado. Útil para identificar itens com pouco volume mas alto desvio relativo.",
+      )}
       <section class="panel pad">
         <div class="panel-title">
           <div>
@@ -1725,7 +1795,7 @@ function renderPartNumberView() {
           </div>
         </div>
         <div class="part-card-grid">
-          ${top.map((record, index) => renderPartInsight(record, index)).join("") || `<div class="empty-state">Sem itens divergentes para exibir.</div>`}
+          ${topByCost.map((record, index) => renderPartInsight(record, index)).join("") || `<div class="empty-state">Sem itens divergentes para exibir.</div>`}
         </div>
       </section>
     </section>
@@ -1962,7 +2032,7 @@ function renderDivergences() {
     ${renderPcpFilters(divergent)}
     ${renderKpis(divergent)}
     <section class="chart-stack">
-      ${renderPartNumberBars("Soma das divergências por maior impacto", topPartNumbers(divergent), "Itens com maior valor absoluto e quantidade divergente.")}
+      ${renderPartNumberBars("Soma das divergências por maior impacto", topPartNumbers(divergent), "Cor indica sobra ou falta; % no topo mostra o impacto proporcional ao saldo. Clique em uma barra para ver detalhes.")}
       <div class="chart-grid thirds">
         ${renderMovementChart(divergent)}
         ${renderAttentionDonut(divergent)}
@@ -3099,7 +3169,14 @@ async function initAuth() {
   }
 
   db.auth.onAuthStateChange(async (event, session) => {
+    // SIGNED_IN é re-disparado em refresh de token / volta de aba.
+    // Só recarrega dados se for um login NOVO (usuário diferente do atual).
     if (event === "SIGNED_IN" && session) {
+      if (state.user && state.user.id === session.user.id) {
+        // Mesmo usuário — apenas atualiza referência da sessão, sem recarregar
+        state.user = session.user;
+        return;
+      }
       state.user = session.user;
       showLoginOverlay(false);
       await loadAndRender();
@@ -3110,6 +3187,7 @@ async function initAuth() {
       app.innerHTML = "";
       showLoginOverlay(true);
     }
+    // Ignora TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION etc.
   });
 
   document.querySelector("#loginForm")?.addEventListener("submit", async (event) => {
