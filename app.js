@@ -2404,9 +2404,9 @@ function renderImportMappingModal(draft) {
               </label>
               <label>Campos calculados
                 <select name="calcMode">
-                  <option value="always" selected>Sempre recalcular totais e custos</option>
-                  <option value="missing">Recalcular somente quando célula faltar</option>
-                  <option value="never">Usar somente valores importados</option>
+                  <option value="missing" selected>Usar valores da planilha (recalcular só células vazias)</option>
+                  <option value="never">Usar somente valores da planilha (sem recalcular)</option>
+                  <option value="always">Recalcular tudo a partir do estoque</option>
                 </select>
               </label>
               <div class="import-stat">
@@ -2857,7 +2857,7 @@ function buildImportedRecords(draft, formData = null, limit = Infinity) {
   const mapping = formData
     ? Object.fromEntries(importFields.map((field) => [field.key, formData.get(field.key) || "__skip__"]))
     : draft.mapping;
-  const calcMode = formData?.get("calcMode") || "always";
+  const calcMode = formData?.get("calcMode") || "missing";
   const records = [];
   let skipped = 0;
   for (let index = 0; index < draft.rows.length && records.length < limit; index += 1) {
@@ -2869,7 +2869,7 @@ function buildImportedRecords(draft, formData = null, limit = Infinity) {
   return { records, skipped };
 }
 
-function recordFromMappedRow(row, mapping, importId, rowNumber, calcMode = "always") {
+function recordFromMappedRow(row, mapping, importId, rowNumber, calcMode = "missing") {
   const getValue = (key) => {
     const mapped = mapping[key];
     if (mapped === undefined || mapped === "__skip__") return "";
