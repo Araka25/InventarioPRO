@@ -23,6 +23,7 @@ const importFields = [
   { key: "unidade", label: "UNIDADE", aliases: ["unidade", "planta", "plant", "unit", "filial", "fabrica", "fábrica", "site", "local"] },
   { key: "precoUnitario", label: "PREÇO UNITÁRIO", type: "number", aliases: ["preco unitario", "preço unitário", "preco un", "preço un", "preco", "preço", "unitario", "unitário"] },
   { key: "custoDivergencia", label: "CUSTO DIVERGÊNCIA", type: "number", aliases: ["custo divergencia", "custo divergência", "custo diver", "valor divergencia", "valor divergência"] },
+  { key: "mesReferencia", label: "MÊS REFERÊNCIA", aliases: ["mes", "mês", "mes referencia", "mes ref", "mes de referencia", "data", "data inventario", "data do inventario", "periodo", "período", "competencia", "competência", "referencia", "referência", "month"] },
 ];
 
 const PLANTS = ["TODAS", "SBO", "SOROCABA", "RESENDE"];
@@ -81,7 +82,9 @@ let state = {
   },
   sortBy: "risk",
   sortDir: "desc",
-  analysisYear: 2026,
+  periodo: "atual",   // "atual" | "todos" (quando nenhum mês está selecionado)
+  periodoMeses: [],   // meses selecionados ["YYYY-MM-01", ...] — vazio = usa periodo
+  periodoAno: new Date().getFullYear(),  // ano corrente do seletor de mês
   topN: 5,
   page: 1,
   pageSize: 50,
@@ -365,7 +368,7 @@ function groupTop(records, field, metric = "custoDivergencia", limit = 8) {
 }
 
 function activeRows() {
-  return filteredRecords();
+  return filteredRecords(periodRecords());
 }
 
 function topLimit() {
@@ -591,16 +594,14 @@ function renderKpis(records = state.records) {
 }
 
 function renderPcpFilters(records) {
-  const clientRows = groupTop(state.records, "cliente", "custoDivergencia", 16);
+  const clientRows = groupTop(periodRecords(), "cliente", "custoDivergencia", 16);
   const activeClient = state.filters.cliente;
   return `
     <section class="pcp-filters">
-      <article class="filter-card">
-        <label>Ano analisado</label>
-        <select id="analysisYearFilter">
-          ${[2024, 2025, 2026, 2027].map((year) => `<option value="${year}" ${state.analysisYear === year ? "selected" : ""}>${year}</option>`).join("")}
-        </select>
-        <small>Referência do demonstrativo</small>
+      <article class="filter-card periodo-card">
+        <label>Período analisado</label>
+        ${renderPeriodoSelector("completo")}
+        <small>${escapeHtml(periodoDescription())}</small>
       </article>
       <article class="filter-card wide">
         <label>Busca operacional</label>
@@ -668,7 +669,12 @@ function classify(record) {
   if (pct > TOLERANCE) return "above";       // sobra > +5.5%
   if (pct < -TOLERANCE) return "below";       // falta < -5.5%
   if (pct !== 0) return "tolerance";          // entre -5.5% e +5.5% (com divergência)
-  return "ok";                                // sem divergência
+  const comp = number(record.comparativo);
+  if (comp === 0) return "ok";                // sem divergência
+  // Divergência com % zerado: saldo 0 (divisão indefinida) ou % não importado.
+  // Saldo 0 → qualquer contagem é desvio total, fora da tolerância; senão,
+  // trata como tolerada para não sumir dos snapshots e do comparativo mensal.
+  return number(record.saldoNiguri) === 0 ? (comp > 0 ? "above" : "below") : "tolerance";
 }
 
 // Mapa: nome da planta → chave do campo de estoque nesta planta
@@ -910,8 +916,13 @@ function renderAnalise() {
   const tab = state.analiseTab;
   const byMaterial = analiseByMaterial(records);
   const byPlanta = analiseByPlanta(state.records);
-  const plantSnapshots = state.snapshots.filter((s) => (s.unidade || "TODAS") === planta);
-  const reincidences = computeReincidences(records, plantSnapshots);
+  // Lista de snapshots: em "TODAS" mostra os de qualquer escopo (cada card
+  // exibe sua planta); reincidências usam o mesmo fallback da matriz mensal.
+  const plantSnapshots = planta === "TODAS"
+    ? state.snapshots
+    : state.snapshots.filter((s) => (s.unidade || "TODAS") === planta);
+  const reincidences = computeReincidences(records, monthlySnapshotsForPlant(planta));
+  const monthlyMatrix = computeMonthlyMatrix(monthlySnapshotsForPlant(planta), records, state.periodoMeses);
   const detectedPlants = uniquePlants();
   const plantLabel = planta === "TODAS" ? "Todas as plantas" : planta;
   const unclassified = state.records.filter((r) => !normalizePlant(r.unidade)).length;
@@ -1019,6 +1030,8 @@ function renderAnalise() {
       </div>
       ${renderMaterialAnalysis(byMaterial)}
     </section>
+
+    ${renderMonthlyDivergences(monthlyMatrix, plantLabel)}
 
     <section class="panel pad">
       <div class="panel-title">
@@ -1218,13 +1231,13 @@ function renderMaterialAnalysis(byMaterial) {
           <tr>
             <th>MATERIAL</th>
             <th class="num">TOTAL</th>
-            <th class="num above-th">SOBRA &gt; +5%</th>
-            <th class="num below-th">FALTA &lt; −5%</th>
-            <th class="num">DENTRO ±5%</th>
+            <th class="num above-th">SOBRA &gt; +${TOLERANCE_LABEL}</th>
+            <th class="num below-th">FALTA &lt; −${TOLERANCE_LABEL}</th>
+            <th class="num">DENTRO ±${TOLERANCE_LABEL}</th>
             <th class="num pos-th">SOBRA GERAL (&gt;0)</th>
             <th class="num neg-th">FALTA GERAL (&lt;0)</th>
-            <th class="num">CUSTO &gt; +5%</th>
-            <th class="num">CUSTO &lt; −5%</th>
+            <th class="num">CUSTO &gt; +${TOLERANCE_LABEL}</th>
+            <th class="num">CUSTO &lt; −${TOLERANCE_LABEL}</th>
             <th class="num">CUSTO TOTAL</th>
           </tr>
         </thead>
@@ -1290,6 +1303,7 @@ function renderDrawer() {
   const totalCost = records.reduce((s, r) => s + Math.abs(number(r.custoDivergencia)), 0);
   const fieldLabel = FIELD_LABELS[field] || field;
   const plantInfo = field === "unidade" ? "" : `<span class="drawer-plant">Planta: ${escapeHtml(state.analisePlanta)}</span>`;
+  const monthlyHistory = field === "partNumber" ? buildItemMonthlyHistory(value) : [];
 
   // Ordena: primeiro itens fora da tolerância (sobra+falta), depois por custo
   const sorted = [...records].sort((a, b) => {
@@ -1338,6 +1352,7 @@ function renderDrawer() {
       </div>
 
       <div class="drawer-body">
+        ${renderDrawerMonthlyHistory(monthlyHistory)}
         ${records.length === 0 ? `<div class="empty-state">Nenhum item encontrado para ${escapeHtml(value)}.</div>` : `
           <table class="drawer-table">
             <thead>
@@ -1391,7 +1406,8 @@ function openDrawerInList() {
   state.filters = { query: "", status: "all", movimento: "all", fornecedor: "all", material: "all", cliente: "all" };
   if (field === "cliente" || field === "fornecedor" || field === "material") {
     state.filters[field] = value;
-  } else if (field === "unidade") {
+  } else {
+    // partNumber, unidade e demais campos caem na busca livre
     state.filters.query = value;
   }
   state.view = "inventario";
@@ -1415,7 +1431,8 @@ function computeReincidences(records, snapshots) {
       const pn = item.partNumber;
       if (!pn) return;
       const cur = occurrences.get(pn) || { partNumber: pn, material: item.material, months: [], totalCost: 0 };
-      cur.months.push(snap.reference_month);
+      // Mesmo mês com snapshots de várias plantas conta uma vez só
+      if (!cur.months.includes(snap.reference_month)) cur.months.push(snap.reference_month);
       cur.totalCost += Math.abs(number(item.custoDivergencia));
       occurrences.set(pn, cur);
     });
@@ -1424,6 +1441,434 @@ function computeReincidences(records, snapshots) {
   return [...occurrences.values()]
     .filter((item) => item.months.length >= 2 || currentDivergentPNs.has(item.partNumber))
     .sort((a, b) => b.months.length - a.months.length || b.totalCost - a.totalCost);
+}
+
+// ============================================================
+// Divergências mensais por item
+// Estoque Físico (INV.TOTAL) − Estoque Sistema (SALDO NIGURI) em cada mês,
+// com % sobre o saldo esperado e custo (qtd divergente × preço unitário).
+// ============================================================
+
+function snapshotItemEntry(item) {
+  return {
+    comparativo: number(item.comparativo),
+    percentual: number(item.percentual),
+    custoDivergencia: number(item.custoDivergencia),
+    saldoNiguri: number(item.saldoNiguri),
+    material: item.material || "",
+    cliente: item.cliente || "",
+  };
+}
+
+// Monta { months: [chaves ordenadas], items: [{partNumber, months: {chave: dados}, ...}], liveMonth }
+// a partir dos snapshots da planta. Se o mês corrente ainda não tem snapshot,
+// entra como coluna "atual" com os dados ao vivo.
+function computeMonthlyMatrix(snapshots, currentRecords, monthsFilter = null) {
+  const allow = monthsFilter && monthsFilter.length ? new Set(monthsFilter) : null;
+  const byMonth = new Map();
+  snapshots.forEach((snap) => {
+    const key = String(snap.reference_month).slice(0, 10);
+    if (allow && !allow.has(key)) return;
+    // Mais de um snapshot no mesmo mês (ex.: um por planta) soma no mesmo mapa —
+    // antes o segundo sobrescrevia o primeiro e o mês "sumia" parcialmente.
+    const map = byMonth.get(key) || new Map();
+    (snap.divergent_items || []).forEach((item) => {
+      if (!item.partNumber) return;
+      const entry = snapshotItemEntry(item);
+      const prev = map.get(item.partNumber);
+      if (prev) {
+        prev.comparativo += entry.comparativo;
+        prev.custoDivergencia += entry.custoDivergencia;
+        prev.saldoNiguri += entry.saldoNiguri;
+        if (prev.saldoNiguri) prev.percentual = prev.comparativo / prev.saldoNiguri;
+        if (!prev.material) prev.material = entry.material;
+        if (!prev.cliente) prev.cliente = entry.cliente;
+      } else {
+        map.set(item.partNumber, entry);
+      }
+    });
+    byMonth.set(key, map);
+  });
+
+  const todayKey = monthKeyToday();
+  let liveMonth = null;
+  if ((!allow || allow.has(todayKey)) && !byMonth.has(todayKey)) {
+    const map = new Map();
+    currentRecords.filter((r) => number(r.comparativo) !== 0).forEach((r) => {
+      map.set(r.partNumber, snapshotItemEntry(r));
+    });
+    if (map.size) {
+      byMonth.set(todayKey, map);
+      liveMonth = todayKey;
+    }
+  }
+
+  const months = [...byMonth.keys()].sort();
+  const items = new Map();
+  months.forEach((key) => {
+    byMonth.get(key).forEach((data, pn) => {
+      const cur = items.get(pn) || {
+        partNumber: pn,
+        material: data.material,
+        cliente: data.cliente,
+        months: {},
+        totalQty: 0,
+        totalCost: 0,
+        absCost: 0,
+      };
+      cur.months[key] = data;
+      if (!cur.material && data.material) cur.material = data.material;
+      cur.totalQty += data.comparativo;
+      cur.totalCost += data.custoDivergencia;
+      cur.absCost += Math.abs(data.custoDivergencia);
+      items.set(pn, cur);
+    });
+  });
+  return {
+    months,
+    items: [...items.values()].sort((a, b) => b.absCost - a.absCost),
+    liveMonth,
+  };
+}
+
+// ============================================================
+// Período analisado (mês/ano ou acumulado) para os dashboards
+// ============================================================
+
+function snapshotMonths() {
+  return [...new Set(state.snapshots.map((s) => String(s.reference_month).slice(0, 10)))].sort();
+}
+
+// Snapshots de um mês. Se houver snapshot "TODAS", usa só ele para não
+// somar em dobro com os snapshots por planta do mesmo mês.
+function snapshotsForMonth(monthKey) {
+  const monthSnaps = state.snapshots.filter((s) => String(s.reference_month).slice(0, 10) === monthKey);
+  const todas = monthSnaps.filter((s) => (s.unidade || "TODAS") === "TODAS");
+  return todas.length ? todas : monthSnaps;
+}
+
+function snapshotItemToRecord(item, monthKey) {
+  const record = {
+    id: `${monthKey}-${item.partNumber}`,
+    rowNumber: "",
+    partNumber: item.partNumber,
+    saldoNiguri: number(item.saldoNiguri),
+    stkSbo: 0,
+    processo: 0,
+    sorocaba: 0,
+    resende: 0,
+    invTotal: number(item.invTotal),
+    comparativo: number(item.comparativo),
+    percentual: number(item.percentual),
+    precoUnitario: number(item.precoUnitario),
+    custoDivergencia: number(item.custoDivergencia),
+    fornecedor: item.fornecedor || "",
+    material: item.material || "",
+    cliente: item.cliente || "",
+    unidade: item.unidade || "",
+    status: cleanStatus(item.status),
+    acao: "",
+    responsavel: "",
+    observacao: "",
+    revisado: false,
+    attentionTags: [],
+  };
+  record.attentionTags = makeTags(record);
+  return record;
+}
+
+// Acumula por item os meses informados. O mês atual ao vivo entra quando o
+// período o cobre (sempre no modo "todos", ou se ele foi selecionado) e
+// ainda não tem snapshot salvo.
+function accumulateMonths(months, includeLive = false) {
+  const acc = new Map();
+  const addRecord = (r) => {
+    const key = r.partNumber;
+    const cur = acc.get(key);
+    if (!cur) {
+      acc.set(key, { ...r, id: `acum-${key}` });
+      return;
+    }
+    cur.saldoNiguri = number(cur.saldoNiguri) + number(r.saldoNiguri);
+    cur.invTotal = number(cur.invTotal) + number(r.invTotal);
+    cur.comparativo = number(cur.comparativo) + number(r.comparativo);
+    cur.custoDivergencia = number(cur.custoDivergencia) + number(r.custoDivergencia);
+    cur.percentual = number(cur.saldoNiguri) ? number(cur.comparativo) / number(cur.saldoNiguri) : 0;
+    if (!cur.material) cur.material = r.material;
+    if (!cur.cliente) cur.cliente = r.cliente;
+    if (!cur.fornecedor) cur.fornecedor = r.fornecedor;
+    if (!cur.precoUnitario) cur.precoUnitario = r.precoUnitario;
+  };
+
+  months.forEach((m) => {
+    snapshotsForMonth(m).forEach((s) => {
+      (s.divergent_items || []).forEach((item) => addRecord(snapshotItemToRecord(item, m)));
+    });
+  });
+  const todayKey = monthKeyToday();
+  const coversToday = includeLive || months.includes(todayKey);
+  if (coversToday && !snapshotMonths().includes(todayKey)) {
+    state.records.filter((r) => number(r.comparativo) !== 0).forEach((r) => addRecord({ ...r }));
+  }
+  return [...acc.values()].map((r) => ({ ...r, status: autoStatus(r), attentionTags: makeTags(r) }));
+}
+
+// Base de registros conforme o período selecionado:
+// meses marcados → acumulado só desses meses; "atual" → dados ao vivo;
+// "todos" → acumulado de todos os meses (+ mês atual ao vivo, se sem snapshot).
+function periodRecords() {
+  const meses = state.periodoMeses || [];
+  if (meses.length) return accumulateMonths(meses);
+  if (state.periodo === "todos") return accumulateMonths(snapshotMonths(), true);
+  return state.records;
+}
+
+function periodoDescription() {
+  const meses = state.periodoMeses || [];
+  if (meses.length) {
+    const withData = new Set(snapshotMonths());
+    const todayKey = monthKeyToday();
+    const semDados = meses.filter((m) => !withData.has(m) && m !== todayKey).length;
+    const base = meses.length === 1
+      ? `${formatMonth(meses[0])} — só itens divergentes`
+      : `${meses.map(formatMonthName).join(" × ")} — acumulado dos meses selecionados`;
+    return base + (semDados ? ` · ${displayInt(semDados)} sem inventário registrado` : "");
+  }
+  if (state.periodo === "todos") {
+    const months = snapshotMonths();
+    const extra = months.includes(monthKeyToday()) ? 0 : 1;
+    return `Acumulado de ${displayInt(months.length + extra)} mês(es) — só itens divergentes`;
+  }
+  return "Inventário atual (ao vivo)";
+}
+
+const MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const PERIODO_ANO_MIN = 2010;
+const PERIODO_ANO_MAX = 2050;
+
+// Seletor de período: caixa de rolagem de ANO (2010–2050) + caixa de MÊS
+// (janeiro–dezembro). Ao clicar no mês, ele entra na análise; repetindo,
+// acumula vários meses. Os selecionados viram chips neon removíveis.
+// Reutilizado no dashboard ("completo", com Atual/Todos) e no painel de
+// divergências mensais ("meses", com botão Todos os meses).
+function renderPeriodoSelector(mode = "completo") {
+  const selected = state.periodoMeses || [];
+  const selectedSet = new Set(selected);
+  const withData = new Set(snapshotMonths());
+  const todayKey = monthKeyToday();
+  const ano = state.periodoAno || new Date().getFullYear();
+  const years = [];
+  for (let y = PERIODO_ANO_MIN; y <= PERIODO_ANO_MAX; y += 1) years.push(y);
+
+  const modeChips = mode === "completo"
+    ? `
+      <button class="chip periodo-chip ${!selectedSet.size && state.periodo === "atual" ? "active" : ""}" data-periodo-mode="atual" type="button">Atual</button>
+      <button class="chip periodo-chip ${!selectedSet.size && state.periodo === "todos" ? "active" : ""}" data-periodo-mode="todos" type="button">Todos</button>
+    `
+    : `
+      <button class="chip periodo-chip ${!selectedSet.size ? "active" : ""}" data-periodo-clear type="button">Todos os meses</button>
+    `;
+
+  return `
+    <div class="periodo-selector">
+      ${modeChips}
+      <select class="periodo-select" data-periodo-ano aria-label="Ano">
+        ${years.map((y) => `<option value="${y}" ${y === ano ? "selected" : ""}>${y}</option>`).join("")}
+      </select>
+      <select class="periodo-select" data-periodo-mes-select aria-label="Mês">
+        <option value="" selected>+ Mês…</option>
+        ${MESES_PT.map((nome, i) => {
+          const key = `${ano}-${String(i + 1).padStart(2, "0")}-01`;
+          const hasData = withData.has(key) || key === todayKey;
+          const isSelected = selectedSet.has(key);
+          return `<option value="${i + 1}">${nome}${hasData ? " ●" : ""}${isSelected ? " ✓" : ""}</option>`;
+        }).join("")}
+      </select>
+    </div>
+    ${selected.length ? `
+      <div class="chip-row periodo-chips">
+        ${selected.map((m) => {
+          const hasData = withData.has(m) || m === todayKey;
+          return `
+            <button class="chip periodo-chip month active ${hasData ? "" : "no-data"}" data-periodo-mes="${escapeHtml(m)}" type="button"
+              title="${hasData ? "Clique para remover da análise" : "Sem inventário registrado neste mês — clique para remover"}">
+              ${escapeHtml(formatMonthName(m))}<span class="chip-year">${parseMonthKey(m).getFullYear()}</span><span class="chip-x">✕</span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    ` : ""}
+  `;
+}
+
+// Snapshots que alimentam a matriz mensal de uma planta.
+// Planta específica → só os snapshots dela. "TODAS" → por mês, prefere o
+// snapshot TODAS; sem ele, une os snapshots por planta daquele mês (a matriz
+// soma itens repetidos entre plantas). Antes, meses salvos só por planta
+// simplesmente não apareciam na visão "Todas as plantas".
+function monthlySnapshotsForPlant(planta) {
+  if (planta && planta !== "TODAS") {
+    return state.snapshots.filter((s) => (s.unidade || "TODAS") === planta);
+  }
+  return snapshotMonths().flatMap((m) => snapshotsForMonth(m));
+}
+
+// Checagem dos meses selecionados: onde cada um está registrado e com
+// quantos itens — para auditar quando um mês "não aparece" na análise.
+function renderMonthCheck(planta) {
+  const meses = state.periodoMeses || [];
+  if (!meses.length) return "";
+  const todayKey = monthKeyToday();
+  const rows = meses.map((m) => {
+    const all = state.snapshots.filter((s) => String(s.reference_month).slice(0, 10) === m);
+    const scoped = planta === "TODAS"
+      ? snapshotsForMonth(m)
+      : all.filter((s) => (s.unidade || "TODAS") === planta);
+    const items = scoped.reduce((n, s) => n + (s.divergent_items || []).length, 0);
+    let status;
+    let ok = true;
+    if (!all.length) {
+      ok = m === todayKey;
+      status = ok ? "sem snapshot — usando o inventário atual (ao vivo)" : "sem inventário registrado — importe a planilha deste mês ou salve um snapshot";
+    } else if (!scoped.length) {
+      ok = false;
+      status = `registrado apenas no escopo: ${all.map((s) => s.unidade || "TODAS").join(", ")} — não entra na planta ${planta}`;
+    } else if (!items) {
+      ok = false;
+      status = `snapshot existe (${scoped.map((s) => s.unidade || "TODAS").join(" + ")}) mas está vazio — refaça a importação/snapshot deste mês`;
+    } else {
+      status = `${scoped.map((s) => s.unidade || "TODAS").join(" + ")} · ${displayInt(items)} itens divergentes`;
+    }
+    return { m, ok, status };
+  });
+  const problems = rows.filter((r) => !r.ok).length;
+  return `
+    <details class="calc-explain month-check" ${problems ? "open" : ""}>
+      <summary>
+        <span class="calc-icon">✓</span>
+        Checagem dos meses selecionados${problems ? ` — ${displayInt(problems)} com pendência` : " — tudo certo"}
+        <span class="calc-chevron">▾</span>
+      </summary>
+      <div class="calc-body">
+        ${rows.map((r) => `
+          <div class="month-check-line ${r.ok ? "ok" : "warn"}">
+            <strong>${escapeHtml(formatMonth(r.m))}:</strong> ${escapeHtml(r.status)}
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+const MONTHLY_TABLE_LIMIT = 40;
+
+function renderMonthlyCell(data) {
+  if (!data) return `<td class="num"><span class="mdiv-empty">—</span></td>`;
+  const comp = number(data.comparativo);
+  const dir = comp < 0 ? "neg" : comp > 0 ? "pos" : "";
+  const sign = comp > 0 ? "+" : "";
+  return `
+    <td class="num">
+      <div class="mdiv-cell ${dir}">
+        <b>${sign}${displayInt(comp)} pçs</b>
+        <span class="mdiv-pct">${pctSigned(data.percentual)}</span>
+        <em>${displayMoney(data.custoDivergencia)}</em>
+      </div>
+    </td>
+  `;
+}
+
+function renderMonthlyDivergences(matrix, plantLabel, planta = state.analisePlanta) {
+  const { months, items, liveMonth } = matrix;
+  const filtered = (state.periodoMeses || []).length > 0;
+  const emptyMessage = filtered
+    ? `<div class="empty-state">Nenhum snapshot desta planta nos meses selecionados. Ajuste a seleção de meses acima.</div>`
+    : `<div class="empty-state">Salve um snapshot por mês (botão "Salvar análise do mês" no painel de Reincidências mensais, logo abaixo) para comparar as divergências de cada item mês a mês.</div>`;
+  const body = !months.length || !items.length
+    ? emptyMessage
+    : `
+      <div class="table-wrap monthly-table-wrap">
+        <table class="monthly-table">
+          <thead>
+            <tr>
+              <th>ITEM</th>
+              ${months.map((m) => `
+                <th class="num ${filtered ? "neon" : ""}">
+                  ${escapeHtml(formatMonthName(m))}
+                  <small>${escapeHtml(String(parseMonthKey(m).getFullYear()))}${m === liveMonth ? " · atual" : ""}</small>
+                </th>
+              `).join("")}
+              <th class="num">TOTAL LÍQUIDO</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.slice(0, MONTHLY_TABLE_LIMIT).map((item) => `
+              <tr class="drill-target" data-drill="partNumber:${escapeHtml(item.partNumber)}" title="Clique para ver o detalhe do item">
+                <td>
+                  <strong>${escapeHtml(item.partNumber)}</strong>
+                  <div class="muted mdiv-material">${escapeHtml(item.material || "-")}</div>
+                </td>
+                ${months.map((m) => renderMonthlyCell(item.months[m])).join("")}
+                <td class="num ${item.totalCost < 0 ? "neg" : item.totalCost > 0 ? "pos" : ""}">
+                  <div class="mdiv-cell total">
+                    <b>${item.totalQty > 0 ? "+" : ""}${displayInt(item.totalQty)} pçs</b>
+                    <em>${displayMoney(item.totalCost)}</em>
+                  </div>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${items.length > MONTHLY_TABLE_LIMIT ? `<p class="muted" style="margin-bottom:0">Mostrando os ${MONTHLY_TABLE_LIMIT} itens de maior impacto financeiro acumulado, de ${displayInt(items.length)} no total.</p>` : ""}
+    `;
+  return `
+    <section class="panel pad">
+      <div class="panel-title">
+        <div>
+          <h3>Divergências mensais por item — ${escapeHtml(plantLabel)}</h3>
+          <p>Período identificado por mês de inventário. Cada célula mostra: divergência em peças (Estoque Físico − Sistema), % sobre o saldo esperado e custo (qtd × preço unitário). Selecione os meses para refinar a comparação.</p>
+        </div>
+      </div>
+      ${renderPeriodoSelector("meses")}
+      ${renderMonthCheck(planta)}
+      ${body}
+    </section>
+  `;
+}
+
+// Histórico mensal de um part number (para o drawer), no formato:
+// Abril: Divergência de -325 pçs (-4,0%) | Custo da divergência: -R$ 1.074,57
+function buildItemMonthlyHistory(partNumber) {
+  const planta = state.analisePlanta;
+  const matrix = computeMonthlyMatrix(monthlySnapshotsForPlant(planta), filterByPlant(state.records), state.periodoMeses);
+  const item = matrix.items.find((i) => normalize(i.partNumber) === normalize(partNumber));
+  if (!item) return [];
+  return matrix.months
+    .filter((m) => item.months[m])
+    .map((m) => ({ monthKey: m, live: m === matrix.liveMonth, ...item.months[m] }));
+}
+
+function renderDrawerMonthlyHistory(history) {
+  if (!history.length) return "";
+  return `
+    <div class="drawer-monthly">
+      <h4>Divergência mensal por inventário</h4>
+      ${history.map((h) => {
+        const comp = number(h.comparativo);
+        const dir = comp < 0 ? "neg" : "pos";
+        const sign = comp > 0 ? "+" : "";
+        return `
+          <div class="mhist-line ${dir}">
+            <strong>${escapeHtml(formatMonth(h.monthKey))}${h.live ? " (atual)" : ""}:</strong>
+            Divergência de <b>${sign}${displayInt(comp)} pçs</b> (${pctSigned(h.percentual)})
+            <span class="mhist-sep">|</span>
+            Custo da divergência: <b>${displayMoney(h.custoDivergencia)}</b>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
 function renderSnapshotsPanel(snapshots, reincidences) {
@@ -1443,8 +1888,8 @@ function renderSnapshotsPanel(snapshots, reincidences) {
                   <button class="btn ghost small" data-delete-snapshot="${escapeHtml(s.id)}" type="button">Excluir</button>
                 </header>
                 <div class="snap-stats">
-                  <span><b>${displayInt(s.items_above)}</b> &gt;+5%</span>
-                  <span><b>${displayInt(s.items_below)}</b> &lt;−5%</span>
+                  <span><b>${displayInt(s.items_above)}</b> &gt;+${TOLERANCE_LABEL}</span>
+                  <span><b>${displayInt(s.items_below)}</b> &lt;−${TOLERANCE_LABEL}</span>
                   <span class="snap-cost">${displayMoney(number(s.cost_total_abs))}</span>
                 </div>
               </article>
@@ -1483,10 +1928,36 @@ function renderSnapshotsPanel(snapshots, reincidences) {
   `;
 }
 
+// Datas de referência chegam como "2026-04-01"; new Date(str) interpretaria como UTC
+// e no fuso do Brasil mostraria o mês anterior — por isso o parse manual.
+function parseMonthKey(dateStr) {
+  const [y, m] = String(dateStr).split("-").map(Number);
+  return new Date(y || 1970, (m || 1) - 1, 1);
+}
+
+function monthKeyToday() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
 function formatMonth(dateStr) {
   if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }).replace(/^./, (c) => c.toUpperCase());
+  return parseMonthKey(dateStr)
+    .toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+function formatMonthName(dateStr) {
+  if (!dateStr) return "-";
+  return parseMonthKey(dateStr)
+    .toLocaleDateString("pt-BR", { month: "long" })
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+function pctSigned(value) {
+  const pct = number(value) * 100;
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
 async function autoClassifyPlants() {
@@ -1524,27 +1995,23 @@ async function autoClassifyPlants() {
   }
 }
 
-async function saveSnapshot() {
-  const planta = state.analisePlanta;
-  const records = filterByPlant(state.records);
-  if (!records.length) {
-    showToast("Nenhum dado para salvar nesta planta", "error");
-    return;
-  }
-  const today = new Date();
-  const refMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+function buildSnapshotPayload(records, refMonth, planta) {
   const sum = analiseSummary(records);
   const divergentItems = [...sum.above.items, ...sum.below.items, ...sum.tolerance.items].map((r) => ({
     partNumber: r.partNumber,
     material: r.material,
     cliente: r.cliente,
+    fornecedor: r.fornecedor,
     unidade: r.unidade,
+    saldoNiguri: r.saldoNiguri,
+    invTotal: r.invTotal,
     comparativo: r.comparativo,
     percentual: r.percentual,
     custoDivergencia: r.custoDivergencia,
+    precoUnitario: r.precoUnitario,
     status: r.status,
   }));
-  const payload = {
+  return {
     user_id: state.user.id,
     reference_month: refMonth,
     unidade: planta,
@@ -1557,6 +2024,17 @@ async function saveSnapshot() {
     cost_total_abs: sum.allDivergent.cost,
     divergent_items: divergentItems,
   };
+}
+
+async function saveSnapshot() {
+  const planta = state.analisePlanta;
+  const records = filterByPlant(state.records);
+  if (!records.length) {
+    showToast("Nenhum dado para salvar nesta planta", "error");
+    return;
+  }
+  const payload = buildSnapshotPayload(records, monthKeyToday(), planta);
+  const refMonth = payload.reference_month;
   showToast("Salvando snapshot...");
   const { error } = await db
     .from("inventory_snapshots")
@@ -1817,7 +2295,7 @@ function renderPriorityRow(record) {
       <div class="num ${compClass}">${displayMoney(record.custoDivergencia)}</div>
       <div class="inline-actions">
         ${statusBadge(record.status)}
-        <button class="btn ghost small" data-action="point" data-id="${record.id}" type="button">Apontar</button>
+        <button class="btn ghost small" data-action="point" data-id="${record.id}" data-pn="${escapeHtml(record.partNumber)}" type="button">Apontar</button>
       </div>
     </article>
   `;
@@ -1962,7 +2440,7 @@ function renderPartInsight(record, index) {
       </div>
       <div class="inline-actions">
         ${statusBadge(record.status)}
-        <button class="btn secondary small" data-action="point" data-id="${record.id}" type="button">Apontar</button>
+        <button class="btn secondary small" data-action="point" data-id="${record.id}" data-pn="${escapeHtml(record.partNumber)}" type="button">Apontar</button>
       </div>
     </article>
   `;
@@ -2409,6 +2887,7 @@ function renderImportMappingModal(draft) {
                   <option value="always">Recalcular tudo a partir do estoque</option>
                 </select>
               </label>
+              ${renderImportMonthSection(draft)}
               <div class="import-stat">
                 <strong>${displayInt(mappedRecords.length)}</strong>
                 <span>prévia de itens válidos</span>
@@ -2432,6 +2911,35 @@ function renderImportMappingModal(draft) {
         </div>
       </form>
     </div>
+  `;
+}
+
+// Bloco "Mês de referência" do modal de importação.
+// Prioridade: mês detectado da coluna MÊS REFERÊNCIA; campo manual é só fallback.
+function renderImportMonthSection(draft) {
+  const monthMapped = draft.mapping.mesReferencia !== undefined && draft.mapping.mesReferencia !== "__skip__";
+  const detected = monthMapped ? detectImportMonths(draft) : [];
+
+  if (detected.length) {
+    return `
+      <div class="import-months">
+        <span class="import-months-title">Mês de referência — detectado da planilha</span>
+        ${detected.map(({ month, count }) => `
+          <span class="import-month-chip">${escapeHtml(formatMonth(month))} · ${displayInt(count)} linha(s)</span>
+        `).join("")}
+      </div>
+      <p class="import-hint">${detected.length === 1
+        ? "Todas as linhas serão registradas como snapshot deste mês, alimentando o comparativo mensal."
+        : "Será registrado um snapshot para cada mês detectado — as linhas entram no mês indicado na própria planilha."}</p>
+    `;
+  }
+
+  return `
+    ${monthMapped ? `<div class="import-alert error">Não reconheci nenhum mês na coluna mapeada em MÊS REFERÊNCIA. Confira a coluna ou informe o mês manualmente abaixo.</div>` : ""}
+    <label>Mês de referência (manual)
+      <input type="month" name="refMonth" value="${monthKeyToday().slice(0, 7)}" />
+    </label>
+    <p class="import-hint">Se a planilha tiver coluna de mês (ex.: 04/2026, abril/2026 ou data), mapeie-a em <b>MÊS REFERÊNCIA</b> para detecção automática. Sem coluna, este mês manual é usado no snapshot. Limpe o campo para não registrar.</p>
   `;
 }
 
@@ -2895,6 +3403,7 @@ function recordFromMappedRow(row, mapping, importId, rowNumber, calcMode = "miss
     unidade: String(getValue("unidade") || "").trim(),
     precoUnitario: parseImportNumber(getValue("precoUnitario")),
     custoDivergencia: parseImportNumber(getValue("custoDivergencia")),
+    mesReferencia: parseMonthReference(getValue("mesReferencia")),
     status: "OK",
     attentionTags: [],
     observacao: "",
@@ -2910,6 +3419,71 @@ function recordFromMappedRow(row, mapping, importId, rowNumber, calcMode = "miss
   record.status = autoStatus(record);
   record.attentionTags = makeTags(record);
   return record;
+}
+
+// ============================================================
+// Mês de referência detectado da planilha
+// ============================================================
+
+const MONTH_NAMES_PT = {
+  janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6,
+  julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+  jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
+};
+
+// Converte o valor de uma célula em chave de mês "YYYY-MM-01".
+// Aceita: serial de data do Excel, 2026-04, 04/2026, 01/04/2026, 202604,
+// número 1-12 (ano atual), "abril", "abr/26", "abril de 2026".
+function parseMonthReference(value) {
+  if (value === undefined || value === null) return "";
+  const mk = (y, m) => (m >= 1 && m <= 12 && y >= 2000 && y <= 2099)
+    ? `${y}-${String(m).padStart(2, "0")}-01`
+    : "";
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (Number.isInteger(value) && value >= 1 && value <= 12) {
+      return mk(new Date().getFullYear(), value);
+    }
+    if (/^20\d{2}(0[1-9]|1[0-2])$/.test(String(value))) {
+      return mk(Math.floor(value / 100), value % 100);
+    }
+    // Serial de data do Excel (dias desde 30/12/1899)
+    if (value > 20000 && value < 80000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.round(value) * 86400000);
+      return mk(d.getUTCFullYear(), d.getUTCMonth() + 1);
+    }
+    return "";
+  }
+
+  const text = normalize(value).trim();
+  if (!text) return "";
+  let m;
+  if ((m = text.match(/^(20\d{2})[-\/\.](\d{1,2})(?:[-\/\.]\d{1,2})?$/))) return mk(+m[1], +m[2]);   // 2026-04, 2026/04/01
+  if ((m = text.match(/^(\d{1,2})[-\/\.](20\d{2})$/))) return mk(+m[2], +m[1]);                      // 04/2026
+  if ((m = text.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](20\d{2})$/))) return mk(+m[3], +m[2]);      // 01/04/2026 (dd/mm/aaaa)
+  if ((m = text.match(/^(20\d{2})(0[1-9]|1[0-2])$/))) return mk(+m[1], +m[2]);                       // 202604
+  if ((m = text.match(/^([a-z]{3,9})\.?(?:\s*(?:de\s+)?[\/\-\s]?\s*(\d{2,4}))?$/)) && MONTH_NAMES_PT[m[1]]) {
+    let year = m[2] ? Number(m[2]) : new Date().getFullYear();
+    if (year < 100) year += 2000;
+    return mk(year, MONTH_NAMES_PT[m[1]]);                                                           // abril, abr/26, abril de 2026
+  }
+  return "";
+}
+
+// Meses distintos encontrados na coluna mapeada como MÊS REFERÊNCIA
+function detectImportMonths(draft, mapping = draft.mapping) {
+  const col = mapping.mesReferencia;
+  if (col === undefined || col === "__skip__") return [];
+  const counts = new Map();
+  draft.rows.forEach((row) => {
+    const key = parseMonthReference(row[number(col)]);
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, count]) => ({ month, count }));
 }
 
 function isBlankImportValue(value) {
@@ -2951,6 +3525,7 @@ async function applyImport(form) {
     return;
   }
   const mode = data.get("importMode");
+  const refMonthValue = String(data.get("refMonth") || "").trim(); // "YYYY-MM"
   state.records = mode === "replace" ? result.records : [...result.records, ...state.records];
   state.page = 1;
   state.modal = null;
@@ -2962,6 +3537,46 @@ async function applyImport(form) {
   } catch (err) {
     console.error("Supabase import:", err);
     showToast("Erro ao sincronizar importação", "error");
+    return;
+  }
+  // Snapshot mensal: prioridade para o mês detectado por linha na planilha;
+  // sem coluna de mês, cai no mês manual informado no modal.
+  const monthGroups = new Map();
+  result.records.forEach((r) => {
+    if (!r.mesReferencia) return;
+    if (!monthGroups.has(r.mesReferencia)) monthGroups.set(r.mesReferencia, []);
+    monthGroups.get(r.mesReferencia).push(r);
+  });
+  if (monthGroups.size) {
+    await saveImportSnapshots(monthGroups);
+  } else if (/^\d{4}-\d{2}$/.test(refMonthValue)) {
+    await saveImportSnapshots(new Map([[`${refMonthValue}-01`, result.records]]));
+  }
+}
+
+// Registra a planilha importada como snapshot dos meses informados (escopo TODAS),
+// para o comparativo mensal e o seletor de período.
+async function saveImportSnapshots(groups) {
+  const months = [...groups.keys()].sort();
+  const failed = [];
+  for (const month of months) {
+    const payload = buildSnapshotPayload(groups.get(month), month, "TODAS");
+    const { error } = await db
+      .from("inventory_snapshots")
+      .upsert(payload, { onConflict: "user_id,reference_month,unidade" });
+    if (error) {
+      console.error("Snapshot da importação:", error);
+      failed.push(month);
+    }
+  }
+  await loadSnapshots();
+  render();
+  if (failed.length) {
+    showToast(`Itens importados, mas falhou o snapshot de: ${failed.map(formatMonthName).join(", ")}`, "error");
+  } else {
+    showToast(months.length === 1
+      ? `Inventário registrado como ${formatMonth(months[0])}`
+      : `${months.length} meses registrados no comparativo mensal`);
   }
 }
 
@@ -3128,9 +3743,51 @@ function bindEvents() {
     button.addEventListener("click", () => setFilter("cliente", button.dataset.clientChip));
   });
 
-  document.querySelector("#analysisYearFilter")?.addEventListener("change", (event) => {
-    state.analysisYear = number(event.target.value);
-    render();
+  document.querySelectorAll("[data-periodo-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.periodo = btn.dataset.periodoMode;
+      state.periodoMeses = [];
+      state.page = 1;
+      render();
+    });
+  });
+  document.querySelectorAll("[data-periodo-mes]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mes = btn.dataset.periodoMes;
+      const set = new Set(state.periodoMeses || []);
+      if (set.has(mes)) set.delete(mes);
+      else set.add(mes);
+      state.periodoMeses = [...set].sort();
+      state.page = 1;
+      render();
+    });
+  });
+  document.querySelectorAll("[data-periodo-ano]").forEach((sel) => {
+    sel.addEventListener("change", (event) => {
+      state.periodoAno = number(event.target.value) || new Date().getFullYear();
+      render();
+    });
+  });
+  document.querySelectorAll("[data-periodo-mes-select]").forEach((sel) => {
+    sel.addEventListener("change", (event) => {
+      const mesNum = number(event.target.value);
+      if (!mesNum) return;
+      const ano = state.periodoAno || new Date().getFullYear();
+      const key = `${ano}-${String(mesNum).padStart(2, "0")}-01`;
+      const set = new Set(state.periodoMeses || []);
+      if (set.has(key)) set.delete(key);
+      else set.add(key);
+      state.periodoMeses = [...set].sort();
+      state.page = 1;
+      render();
+    });
+  });
+  document.querySelectorAll("[data-periodo-clear]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.periodoMeses = [];
+      state.page = 1;
+      render();
+    });
   });
   document.querySelector("#topFilter")?.addEventListener("change", (event) => {
     state.topN = number(event.target.value);
@@ -3171,10 +3828,18 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      const { action, id } = button.dataset;
-      if (action === "edit") state.modal = { type: "item", id };
-      if (action === "point") state.modal = { type: "point", id };
+      const { action, id, pn } = button.dataset;
       if (action === "delete") return deleteRecord(id);
+      if (action === "edit" || action === "point") {
+        // Visões por período usam registros agregados com id sintético —
+        // resolve para o registro vivo pelo part number.
+        const target = findRecord(id) || (pn && state.records.find((r) => normalize(r.partNumber) === normalize(pn)));
+        if (!target) {
+          showToast("Item não está na base atual — apontamentos valem para o inventário ao vivo", "error");
+          return;
+        }
+        state.modal = { type: action === "edit" ? "item" : "point", id: target.id };
+      }
       render();
     });
   });

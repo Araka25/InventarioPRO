@@ -386,7 +386,7 @@ textarea:focus {
 
 .pcp-filters {
   display: grid;
-  grid-template-columns: minmax(160px, 0.7fr) minmax(260px, 1.5fr) minmax(140px, 0.55fr) minmax(180px, 0.7fr);
+  grid-template-columns: minmax(250px, 1.1fr) minmax(240px, 1.2fr) minmax(140px, 0.55fr) minmax(180px, 0.7fr);
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -1777,6 +1777,43 @@ tbody tr:hover td {
   border-radius: var(--radius);
   background: #0d0f15;
   padding: 14px;
+}
+
+.import-hint {
+  margin: -4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.import-months {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 10px 12px;
+}
+
+.import-months-title {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.import-month-chip {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.76rem;
+  justify-self: start;
+  text-transform: capitalize;
 }
 
 .import-stat {
@@ -3437,6 +3474,239 @@ td.neg { color: var(--red); font-weight: 700; }
   font-family: var(--mono);
   font-weight: 800;
   font-size: 0.78rem;
+}
+
+/* Seleção de período por chips (multi-mês) — destaque fluorescente */
+.periodo-card .chip-row {
+  gap: 6px;
+}
+
+.periodo-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.periodo-select {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  max-width: 130px;
+}
+
+.periodo-chip .chip-x {
+  margin-left: 7px;
+  font-size: 9px;
+  opacity: 0.75;
+}
+
+.periodo-chip.no-data {
+  border-style: dashed;
+  border-color: var(--orange);
+  background: rgba(255, 138, 52, 0.12);
+  color: #ffc296;
+  box-shadow: 0 0 10px rgba(255, 138, 52, 0.4);
+  text-shadow: 0 0 8px rgba(255, 138, 52, 0.6);
+}
+
+.periodo-chip {
+  min-height: 28px;
+  padding: 0 11px;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.periodo-chip .chip-year {
+  margin-left: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.65;
+  font-family: var(--mono);
+}
+
+.periodo-chip.active {
+  border-color: var(--yellow);
+  background: rgba(255, 210, 74, 0.14);
+  color: #ffe9a8;
+  box-shadow: 0 0 12px rgba(255, 210, 74, 0.45), inset 0 0 6px rgba(255, 210, 74, 0.18);
+  text-shadow: 0 0 8px rgba(255, 210, 74, 0.65);
+}
+
+.periodo-chip.month.active {
+  border-color: var(--cyan);
+  background: rgba(0, 216, 255, 0.16);
+  color: #8df1ff;
+  box-shadow: 0 0 14px rgba(0, 216, 255, 0.55), inset 0 0 7px rgba(0, 216, 255, 0.22);
+  text-shadow: 0 0 9px rgba(0, 216, 255, 0.75);
+}
+
+.periodo-chip.month.active:hover {
+  border-color: var(--cyan);
+  background: rgba(0, 216, 255, 0.24);
+}
+
+.periodo-chips {
+  margin: 4px 0;
+}
+
+/* Checagem dos meses selecionados */
+.month-check {
+  margin: 10px 0;
+}
+
+.month-check-line {
+  font-size: 0.82rem;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border-strong);
+  color: var(--muted);
+}
+
+.month-check-line:last-child {
+  border-bottom: 0;
+}
+
+.month-check-line strong {
+  color: var(--text);
+  text-transform: capitalize;
+  margin-right: 4px;
+}
+
+.month-check-line.ok strong { color: var(--green); text-shadow: 0 0 8px rgba(0, 208, 132, 0.45); }
+.month-check-line.warn { color: #ffc296; }
+.month-check-line.warn strong { color: var(--orange); text-shadow: 0 0 8px rgba(255, 138, 52, 0.5); }
+
+/* Divergências mensais por item */
+.monthly-table-wrap {
+  overflow-x: auto;
+}
+
+.monthly-table th.neon {
+  color: var(--cyan);
+  text-shadow: 0 0 10px rgba(0, 216, 255, 0.65);
+  border-bottom: 2px solid rgba(0, 216, 255, 0.55);
+}
+
+.mdiv-cell.pos b { text-shadow: 0 0 10px rgba(0, 216, 255, 0.55); }
+.mdiv-cell.neg b { text-shadow: 0 0 10px rgba(255, 66, 109, 0.55); }
+.mdiv-cell.pos em { text-shadow: 0 0 8px rgba(0, 216, 255, 0.35); }
+.mdiv-cell.neg em { text-shadow: 0 0 8px rgba(255, 66, 109, 0.35); }
+
+.monthly-table th {
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.monthly-table th small {
+  display: block;
+  font-size: 0.62rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.monthly-table td {
+  vertical-align: top;
+}
+
+.mdiv-material {
+  font-size: 0.72rem;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdiv-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.mdiv-cell b {
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.mdiv-cell.pos b { color: var(--cyan); }
+.mdiv-cell.neg b { color: var(--red); }
+
+.mdiv-pct {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.mdiv-cell em {
+  font-style: normal;
+  font-size: 0.76rem;
+  color: var(--soft);
+  font-weight: 700;
+}
+
+.mdiv-cell.pos em { color: var(--cyan); }
+.mdiv-cell.neg em { color: var(--red); }
+
+.mdiv-cell.total b,
+.mdiv-cell.total em {
+  color: inherit;
+}
+
+.mdiv-empty {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* Histórico mensal no drawer do part number */
+.drawer-monthly {
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.drawer-monthly h4 {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+.mhist-line {
+  font-size: 0.85rem;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--border-strong);
+  color: var(--muted);
+}
+
+.mhist-line:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.mhist-line strong {
+  color: var(--text);
+  text-transform: capitalize;
+  margin-right: 4px;
+}
+
+.mhist-line b {
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.mhist-line.pos b { color: var(--cyan); }
+.mhist-line.neg b { color: var(--red); }
+
+.mhist-sep {
+  margin: 0 6px;
+  opacity: 0.5;
 }
 
 @media (max-width: 1280px) {
