@@ -2811,13 +2811,50 @@ fieldset legend {
   margin-top: 2px;
 }
 
+.analise-card .card-qty {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--soft);
+  margin-top: 6px;
+}
+
+.analise-card .card-qty.pos { color: var(--cyan); }
+.analise-card .card-qty.neg { color: var(--red); }
+
 .analise-card .card-cost {
   font-family: var(--mono);
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--text);
-  margin-top: 6px;
+  margin-top: 4px;
 }
+
+.analise-card .card-liquido {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.analise-card .card-liquido span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.analise-card .card-liquido b {
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.analise-card .card-liquido.neg b { color: var(--red); text-shadow: 0 0 10px rgba(255, 66, 109, 0.45); }
+.analise-card .card-liquido.pos b { color: var(--cyan); text-shadow: 0 0 10px rgba(0, 216, 255, 0.45); }
 
 .analise-card.above .card-cost  { color: var(--cyan); }
 .analise-card.below .card-cost  { color: var(--red); }
@@ -3476,6 +3513,22 @@ td.neg { color: var(--red); font-weight: 700; }
   font-size: 0.78rem;
 }
 
+/* Painel de período no topo das abas de análise */
+.periodo-panel .panel-title {
+  margin-bottom: 12px;
+}
+
+.periodo-desc {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--cyan);
+  text-shadow: 0 0 10px rgba(0, 216, 255, 0.5);
+  align-self: center;
+  text-align: right;
+  text-transform: capitalize;
+}
+
 /* Seleção de período por chips (multi-mês) — destaque fluorescente */
 .periodo-card .chip-row {
   gap: 6px;
@@ -3552,6 +3605,30 @@ td.neg { color: var(--red); font-weight: 700; }
   margin: 4px 0;
 }
 
+/* Conferência dos dados do período (planilha × cards) */
+.period-conf {
+  margin: 12px 0 0;
+}
+
+.conf-table th {
+  font-size: 0.66rem;
+}
+
+.conf-table td {
+  padding: 8px 7px;
+}
+
+.conf-ok {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.conf-warn {
+  color: var(--orange);
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(255, 138, 52, 0.5);
+}
+
 /* Checagem dos meses selecionados */
 .month-check {
   margin: 10px 0;
@@ -3578,10 +3655,63 @@ td.neg { color: var(--red); font-weight: 700; }
 .month-check-line.warn { color: #ffc296; }
 .month-check-line.warn strong { color: var(--orange); text-shadow: 0 0 8px rgba(255, 138, 52, 0.5); }
 
+/* Filtro e ordenação da tabela mensal */
+.monthly-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+
+.monthly-controls label {
+  display: grid;
+  gap: 4px;
+}
+
+.monthly-controls label span {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.monthly-controls .mc-search {
+  flex: 1 1 260px;
+}
+
+.monthly-controls .mc-search input {
+  width: 100%;
+}
+
+.monthly-controls .mc-sort select {
+  min-width: 200px;
+}
+
+.monthly-controls #monthlySortDirButton {
+  min-height: 38px;
+}
+
 /* Divergências mensais por item */
 .monthly-table-wrap {
   overflow-x: auto;
 }
+
+.monthly-total-row td {
+  border-top: 2px solid var(--border-strong);
+  background: rgba(0, 216, 255, 0.05);
+  position: sticky;
+  bottom: 0;
+}
+
+.monthly-total-row td:first-child {
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--soft);
+}
+
+.monthly-total-row .mdiv-cell.total b { font-size: 0.92rem; }
 
 .monthly-table th.neon {
   color: var(--cyan);
